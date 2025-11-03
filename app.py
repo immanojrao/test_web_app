@@ -89,5 +89,18 @@ def get_unique_values():
     return jsonify({"column": column, "uniqueValues": sorted(unique_values, key=lambda x: str(x))})
 
 
+@app.route("/get_date_columns", methods=["GET"])
+def get_date_columns():
+    """Get all date/datetime columns from the dataframe"""
+    date_columns = []
+
+    for col in df.columns:
+        # Check if column is datetime type or contains 'date' in the name
+        if pd.api.types.is_datetime64_any_dtype(df[col]) or 'date' in col.lower():
+            date_columns.append(col)
+
+    return jsonify({"dateColumns": date_columns})
+
+
 if __name__ == "__main__":
     app.run(debug=True)
