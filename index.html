@@ -333,6 +333,30 @@
             </div>
         </div>
 
+        <!-- Step 1.6: Data-Based Slicer (Fixed Column) -->
+        <div class="section">
+            <div class="section-title">
+                <span class="step-badge">1.6</span>
+                Data-Based Slicer (Fixed Column)
+            </div>
+            <div class="info-box">
+                Select a column once and filter by its data values. The column cannot be changed without resetting.
+            </div>
+            <div class="form-group" style="max-width: 300px; margin-bottom: 15px;">
+                <label for="dataSlicerColumn">Select Column:</label>
+                <select id="dataSlicerColumn" onchange="initializeDataSlicer()">
+                    <option value="">-- Choose a column --</option>
+                </select>
+            </div>
+            <div class="button-group">
+                <button class="secondary" onclick="applyDataSlicerFilter()">Apply Data Filter</button>
+                <button class="secondary" onclick="clearDataSlicer()">Clear & Reset</button>
+            </div>
+            <div id="dataSlicerContainer" style="margin-top: 15px;">
+                <!-- Data slicer will be dynamically generated here -->
+            </div>
+        </div>
+
         <!-- Step 2: Data Grid -->
         <div class="section">
             <div class="section-title">
@@ -362,7 +386,9 @@
                         <option value="scatter">Scatter Plot</option>
                         <option value="doughnut">Doughnut Chart</option>
                         <option value="area">Area Chart</option>
+                        <option value="radar">Radar Chart</option>
                         <option value="horizontalBar">Horizontal Bar</option>
+                        <option value="combination">Combination Chart (Bar + Line)</option>
                     </select>
                 </div>
 
@@ -372,8 +398,15 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="yColumn">Y-Axis Column:</label>
+                    <label for="yColumn"><span id="yColumnLabel">Y-Axis Column:</span></label>
                     <select id="yColumn"></select>
+                </div>
+
+                <div class="form-group" id="y2ColumnsGroup" style="display: none;">
+                    <label for="y2Columns">Y2-Axis Columns (Lines):</label>
+                    <div id="y2ColumnsContainer" style="max-height: 150px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 4px; padding: 8px; background: #fafafa;">
+                        <!-- Y2 column checkboxes will be dynamically generated here -->
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -420,6 +453,8 @@
         let currentChart = null;
         let currentColumns = [];
         let slicersData = {};
+        let dataSlicerColumn = null;
+        let dataSlicerValues = [];
 
         // Initialize AG Grid
         const gridOptions = {
@@ -614,19 +649,170 @@
         function updateChartColumnOptions() {
             const xSelect = document.getElementById('xColumn');
             const ySelect = document.getElementById('yColumn');
+            const dataSlicerSelect = document.getElementById('dataSlicerColumn');
+            const y2Container = document.getElementById('y2ColumnsContainer');
 
             xSelect.innerHTML = '';
             ySelect.innerHTML = '';
+            dataSlicerSelect.innerHTML = '<option value="">-- Choose a column --</option>';
+            y2Container.innerHTML = '';
 
             currentColumns.forEach(col => {
                 xSelect.add(new Option(col, col));
                 ySelect.add(new Option(col, col));
+                dataSlicerSelect.add(new Option(col, col));
+
+                // Add checkboxes for Y2 columns (for combination chart)
+                const checkboxDiv = document.createElement('div');
+                checkboxDiv.style.padding = '4px';
+                checkboxDiv.innerHTML = `
+                    <label style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" class="y2-column-checkbox" value="${col}">
+                        <span>${col}</span>
+                    </label>
+                `;
+                y2Container.appendChild(checkboxDiv);
             });
         }
 
         // Handle chart type changes
         function handleChartTypeChange() {
-            // Can add specific logic for different chart types if needed
+            const chartType = document.getElementById('chartType').value;
+            const y2ColumnsGroup = document.getElementById('y2ColumnsGroup');
+            const yColumnLabel = document.getElementById('yColumnLabel');
+
+            // Show Y2 columns selector for combination chart
+            if (chartType === 'combination') {
+                y2ColumnsGroup.style.display = 'block';
+                yColumnLabel.textContent = 'Y1-Axis Column (Bars):';
+            } else {
+                y2ColumnsGroup.style.display = 'none';
+                yColumnLabel.textContent = 'Y-Axis Column:';
+            }
+        }
+
+        // Initialize data-based slicer with fixed column
+        async function initializeDataSlicer() {
+            const selectedColumn = document.getElementById('dataSlicerColumn').value;
+
+            if (!selectedColumn) {
+                return;
+            }
+
+            // Lock the column selection
+            dataSlicerColumn = selectedColumn;
+            document.getElementById('dataSlicerColumn').disabled = true;
+
+            const container = document.getElementById('dataSlicerContainer');
+            container.innerHTML = '<p style="padding: 20px; text-align: center;">Loading values...</p>';
+
+            try {
+                const response = await fetch('/get_unique_values', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({column: selectedColumn})
+                });
+
+                const result = await response.json();
+                dataSlicerValues = result.uniqueValues;
+
+                // Render data slicer
+                renderDataSlicer();
+
+            } catch (error) {
+                console.error('Error initializing data slicer:', error);
+                alert('Error loading data slicer values');
+            }
+        }
+
+        // Render data-based slicer UI
+        function renderDataSlicer() {
+            const container = document.getElementById('dataSlicerContainer');
+            container.innerHTML = '';
+
+            const slicerDiv = document.createElement('div');
+            slicerDiv.className = 'slicer';
+            slicerDiv.style.maxWidth = '600px';
+
+            const title = document.createElement('div');
+            title.className = 'slicer-title';
+            title.textContent = `${dataSlicerColumn} (Fixed Column)`;
+            title.style.color = '#003D7A';
+            title.style.fontWeight = 'bold';
+            slicerDiv.appendChild(title);
+
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'slicer-options';
+            optionsDiv.style.maxHeight = '300px';
+
+            dataSlicerValues.forEach(value => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'slicer-option';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = value;
+                checkbox.id = `data-slicer-${value}`;
+                checkbox.className = 'data-slicer-checkbox';
+
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.textContent = value;
+
+                optionDiv.appendChild(checkbox);
+                optionDiv.appendChild(label);
+                optionsDiv.appendChild(optionDiv);
+            });
+
+            slicerDiv.appendChild(optionsDiv);
+            container.appendChild(slicerDiv);
+        }
+
+        // Apply data slicer filter
+        function applyDataSlicerFilter() {
+            if (!gridApi || !dataSlicerColumn) {
+                alert('Please initialize the data slicer first');
+                return;
+            }
+
+            // Get checked values
+            const checkedValues = [];
+            document.querySelectorAll('.data-slicer-checkbox:checked').forEach(checkbox => {
+                checkedValues.push(checkbox.value);
+            });
+
+            const filterInstance = gridApi.getColumnFilterInstance(dataSlicerColumn);
+
+            if (checkedValues.length > 0) {
+                filterInstance.setModel({
+                    filterType: 'set',
+                    values: checkedValues
+                });
+            } else {
+                filterInstance.setModel(null);
+            }
+
+            gridApi.onFilterChanged();
+        }
+
+        // Clear data slicer and reset
+        function clearDataSlicer() {
+            document.querySelectorAll('.data-slicer-checkbox').forEach(checkbox => {
+                checkbox.checked = false;
+            });
+
+            if (gridApi && dataSlicerColumn) {
+                const filterInstance = gridApi.getColumnFilterInstance(dataSlicerColumn);
+                filterInstance.setModel(null);
+                gridApi.onFilterChanged();
+            }
+
+            // Reset and unlock column selection
+            dataSlicerColumn = null;
+            dataSlicerValues = [];
+            document.getElementById('dataSlicerColumn').value = '';
+            document.getElementById('dataSlicerColumn').disabled = false;
+            document.getElementById('dataSlicerContainer').innerHTML = '';
         }
 
         // Create chart from filtered data
@@ -654,7 +840,30 @@
                 return;
             }
 
-            // Process data
+            // Destroy existing chart
+            if (currentChart) {
+                currentChart.destroy();
+            }
+
+            const chartContainer = document.getElementById('chartContainer');
+            const canvas = document.getElementById('chartCanvas');
+            const ctx = canvas.getContext('2d');
+
+            // Handle combination chart separately
+            if (chartType === 'combination') {
+                const y2Checkboxes = document.querySelectorAll('.y2-column-checkbox:checked');
+                const y2Columns = Array.from(y2Checkboxes).map(cb => cb.value);
+
+                if (y2Columns.length === 0) {
+                    alert('Please select at least one Y2 column for the line chart');
+                    return;
+                }
+
+                createCombinationChart(ctx, filteredData, xColumn, yColumn, y2Columns, aggregation, shouldGroup, skipNullZero);
+                return;
+            }
+
+            // Process data for other chart types
             let xValues, yValues;
 
             if (shouldGroup) {
@@ -667,28 +876,18 @@
                 yValues = processed.y;
             }
 
-            // Destroy existing chart
-            if (currentChart) {
-                currentChart.destroy();
-            }
-
             // Calculate dynamic width for scrollable chart
             const minBarWidth = 40; // minimum width per bar in pixels
             const calculatedWidth = Math.max(800, xValues.length * minBarWidth);
 
             // Set canvas width for horizontal scrolling
-            const chartContainer = document.getElementById('chartContainer');
-            const canvas = document.getElementById('chartCanvas');
-
-            if (chartType === 'bar' || chartType === 'horizontalBar') {
+            if (chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'combination') {
                 chartContainer.style.width = calculatedWidth + 'px';
                 canvas.width = calculatedWidth;
             } else {
                 chartContainer.style.width = '100%';
                 canvas.width = 800;
             }
-
-            const ctx = canvas.getContext('2d');
 
             // Create chart
             createBasicChart(ctx, chartType, xValues, yValues, xColumn, yColumn);
@@ -781,22 +980,148 @@
             }
         }
 
+        // Create combination chart (Bar + Line)
+        function createCombinationChart(ctx, data, xColumn, y1Column, y2Columns, aggMethod, shouldGroup, skipNullZero) {
+            // Process Y1 data (bars)
+            let xValues, y1Values;
+            if (shouldGroup) {
+                const aggregated = aggregateData(data, xColumn, y1Column, aggMethod, skipNullZero);
+                xValues = aggregated.x;
+                y1Values = aggregated.y;
+            } else {
+                const processed = processData(data, xColumn, y1Column, skipNullZero);
+                xValues = processed.x;
+                y1Values = processed.y;
+            }
+
+            // Process Y2 data (lines)
+            const datasets = [{
+                label: y1Column + ' (Bar)',
+                data: y1Values,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 2,
+                type: 'bar',
+                yAxisID: 'y1'
+            }];
+
+            const lineColors = [
+                'rgba(255, 99, 132, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(201, 203, 207, 1)'
+            ];
+
+            y2Columns.forEach((y2Col, index) => {
+                let y2Values;
+                if (shouldGroup) {
+                    const aggregated = aggregateData(data, xColumn, y2Col, aggMethod, skipNullZero);
+                    y2Values = aggregated.y;
+                } else {
+                    const processed = processData(data, xColumn, y2Col, skipNullZero);
+                    y2Values = processed.y;
+                }
+
+                datasets.push({
+                    label: y2Col + ' (Line)',
+                    data: y2Values,
+                    borderColor: lineColors[index % lineColors.length],
+                    backgroundColor: lineColors[index % lineColors.length].replace('1)', '0.1)'),
+                    borderWidth: 3,
+                    type: 'line',
+                    yAxisID: 'y2',
+                    tension: 0.4,
+                    fill: false
+                });
+            });
+
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: xValues,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Combination Chart: ${y1Column} (Bars) & ${y2Columns.join(', ')} (Lines)`,
+                            font: { size: 18, weight: 'bold' }
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        zoom: {
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                mode: 'x',
+                            },
+                            pan: {
+                                enabled: true,
+                                mode: 'x',
+                            }
+                        }
+                    },
+                    scales: {
+                        y1: {
+                            type: 'linear',
+                            position: 'left',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: y1Column + ' (Bars)'
+                            }
+                        },
+                        y2: {
+                            type: 'linear',
+                            position: 'right',
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Lines'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: xColumn
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         // Create basic chart
         function createBasicChart(ctx, type, xValues, yValues, xColumn, yColumn) {
             const isHorizontal = type === 'horizontalBar';
             const actualType = isHorizontal ? 'bar' : type;
 
+            // Special handling for area chart (line chart with fill)
+            const isFilled = type === 'area';
+            const chartType = isFilled ? 'line' : actualType;
+
             currentChart = new Chart(ctx, {
-                type: actualType,
+                type: chartType,
                 data: {
                     labels: xValues,
                     datasets: [{
                         label: yColumn,
                         data: yValues,
-                        backgroundColor: getColors(xValues.length, 0.6),
+                        backgroundColor: getColors(xValues.length, isFilled ? 0.3 : 0.6),
                         borderColor: getColors(xValues.length, 1),
                         borderWidth: 2,
-                        tension: 0.4
+                        tension: 0.4,
+                        fill: isFilled
                     }]
                 },
                 options: {
@@ -817,15 +1142,15 @@
                             zoom: {
                                 wheel: { enabled: true },
                                 pinch: { enabled: true },
-                                mode: 'x',
+                                mode: type === 'radar' ? 'xy' : 'x',
                             },
                             pan: {
                                 enabled: true,
-                                mode: 'x',
+                                mode: type === 'radar' ? 'xy' : 'x',
                             }
                         }
                     },
-                    scales: type !== 'pie' && type !== 'doughnut' ? {
+                    scales: type !== 'pie' && type !== 'doughnut' && type !== 'radar' ? {
                         y: {
                             beginAtZero: true,
                             title: { display: true, text: isHorizontal ? xColumn : yColumn }
