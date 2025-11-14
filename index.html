@@ -314,46 +314,17 @@
             </div>
         </div>
 
-        <!-- Step 1.5: Slicers for Advanced Filtering -->
+        <!-- Step 1.5: Date Slicer -->
         <div class="section">
             <div class="section-title">
                 <span class="step-badge">1.5</span>
-                Advanced Filters (Slicers)
+                Date Filter
             </div>
             <div class="info-box">
-                Select specific values from each column to filter your data. Multiple selections within a slicer are combined with OR logic.
-            </div>
-            <div class="button-group">
-                <button onclick="initializeSlicers()">Initialize Slicers</button>
-                <button class="secondary" onclick="applySlicerFilters()">Apply Filters</button>
-                <button class="secondary" onclick="clearAllSlicers()">Clear All Filters</button>
-            </div>
-            <div id="slicersContainer" class="slicers-container">
-                <!-- Slicers will be dynamically generated here -->
-            </div>
-        </div>
-
-        <!-- Step 1.6: Date-Based Slicer (Fixed Column) -->
-        <div class="section">
-            <div class="section-title">
-                <span class="step-badge">1.6</span>
-                Date-Based Slicer (Fixed Column)
-            </div>
-            <div class="info-box">
-                Select a date column once and filter by date values. The column cannot be changed without resetting.
-            </div>
-            <div class="form-group" style="max-width: 300px; margin-bottom: 15px;">
-                <label for="dateSlicerColumn">Select Date Column:</label>
-                <select id="dateSlicerColumn" onchange="initializeDateSlicer()">
-                    <option value="">-- Choose a date column --</option>
-                </select>
-            </div>
-            <div class="button-group">
-                <button class="secondary" onclick="applyDateSlicerFilter()">Apply Date Filter</button>
-                <button class="secondary" onclick="clearDateSlicer()">Clear & Reset</button>
+                Filter data by selecting specific dates. This will filter both the grid and charts.
             </div>
             <div id="dateSlicerContainer" style="margin-top: 15px;">
-                <!-- Date slicer will be dynamically generated here -->
+                <!-- Date slicer will be automatically loaded here -->
             </div>
         </div>
 
@@ -452,10 +423,8 @@
         let gridApi;
         let currentChart = null;
         let currentColumns = [];
-        let slicersData = {};
-        let dateSlicerColumn = null;
+        let dateSlicerColumn = 'Date';  // Fixed to 'Date' column
         let dateSlicerValues = [];
-        let dateColumns = [];
         let millionColumns = [];  // Track columns with values >= 1 million
 
         // Initialize AG Grid
@@ -570,153 +539,30 @@
                 // Update chart column dropdowns
                 updateChartColumnOptions();
 
+                // Auto-initialize date slicer
+                initializeDateSlicer();
+
             } catch (error) {
                 console.error('Error loading data:', error);
                 alert('Error loading data');
             }
         }
 
-        // Initialize slicers with unique values from selected columns
-        async function initializeSlicers() {
-            const checkboxes = document.querySelectorAll('#columnSelector input[type="checkbox"]:checked');
-            const selectedColumns = Array.from(checkboxes).map(cb => cb.value);
-
-            if (selectedColumns.length === 0) {
-                alert('Please select columns first');
-                return;
-            }
-
-            const slicersContainer = document.getElementById('slicersContainer');
-            slicersContainer.innerHTML = '<p style="padding: 20px; text-align: center;">Loading slicers...</p>';
-
-            slicersData = {};
-
-            // Create slicers for the first 5 columns (or all if less than 5)
-            const columnsForSlicers = selectedColumns.slice(0, Math.max(5, selectedColumns.length));
-
-            try {
-                // Fetch unique values for each column
-                for (const column of columnsForSlicers) {
-                    const response = await fetch('/get_unique_values', {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({column: column})
-                    });
-
-                    const result = await response.json();
-                    slicersData[column] = result.uniqueValues;
-                }
-
-                // Render slicers
-                renderSlicers();
-
-            } catch (error) {
-                console.error('Error initializing slicers:', error);
-                alert('Error loading slicer data');
-            }
-        }
-
-        // Render slicers UI
-        function renderSlicers() {
-            const slicersContainer = document.getElementById('slicersContainer');
-            slicersContainer.innerHTML = '';
-
-            Object.keys(slicersData).forEach(column => {
-                const slicerDiv = document.createElement('div');
-                slicerDiv.className = 'slicer';
-
-                const title = document.createElement('div');
-                title.className = 'slicer-title';
-                title.textContent = column;
-                slicerDiv.appendChild(title);
-
-                const optionsDiv = document.createElement('div');
-                optionsDiv.className = 'slicer-options';
-
-                slicersData[column].forEach(value => {
-                    const optionDiv = document.createElement('div');
-                    optionDiv.className = 'slicer-option';
-
-                    const checkbox = document.createElement('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.value = value;
-                    checkbox.id = `slicer-${column}-${value}`;
-                    checkbox.dataset.column = column;
-
-                    const label = document.createElement('label');
-                    label.htmlFor = checkbox.id;
-                    label.textContent = value;
-
-                    optionDiv.appendChild(checkbox);
-                    optionDiv.appendChild(label);
-                    optionsDiv.appendChild(optionDiv);
-                });
-
-                slicerDiv.appendChild(optionsDiv);
-                slicersContainer.appendChild(slicerDiv);
-            });
-        }
-
-        // Apply slicer filters to AG Grid
-        function applySlicerFilters() {
-            if (!gridApi) {
-                alert('Please load data first');
-                return;
-            }
-
-            // Get all checked slicer values grouped by column
-            const filtersByColumn = {};
-
-            document.querySelectorAll('.slicer-option input:checked').forEach(checkbox => {
-                const column = checkbox.dataset.column;
-                const value = checkbox.value;
-
-                if (!filtersByColumn[column]) {
-                    filtersByColumn[column] = [];
-                }
-                filtersByColumn[column].push(value);
-            });
-
-            // Apply filters to AG Grid
-            Object.keys(slicersData).forEach(column => {
-                const filterInstance = gridApi.getColumnFilterInstance(column);
-
-                if (filtersByColumn[column] && filtersByColumn[column].length > 0) {
-                    // Set filter to include only selected values
-                    filterInstance.setModel({
-                        filterType: 'set',
-                        values: filtersByColumn[column]
-                    });
-                } else {
-                    // Clear filter for this column
-                    filterInstance.setModel(null);
-                }
-            });
-
-            gridApi.onFilterChanged();
-        }
-
-        // Clear all slicer filters
-        function clearAllSlicers() {
-            document.querySelectorAll('.slicer-option input').forEach(checkbox => {
-                checkbox.checked = false;
-            });
-
-            if (gridApi) {
-                gridApi.setFilterModel(null);
-            }
-        }
 
         // Update chart column dropdowns
-        async function updateChartColumnOptions() {
+        function updateChartColumnOptions() {
             const xSelect = document.getElementById('xColumn');
             const ySelect = document.getElementById('yColumn');
-            const dateSlicerSelect = document.getElementById('dateSlicerColumn');
             const y2Container = document.getElementById('y2ColumnsContainer');
+
+            // Save current selections before clearing
+            const currentXValue = xSelect.value;
+            const currentYValue = ySelect.value;
+            const currentY2Values = Array.from(document.querySelectorAll('.y2-column-checkbox:checked'))
+                .map(cb => cb.value);
 
             xSelect.innerHTML = '';
             ySelect.innerHTML = '';
-            dateSlicerSelect.innerHTML = '<option value="">-- Choose a date column --</option>';
             y2Container.innerHTML = '';
 
             currentColumns.forEach(col => {
@@ -735,18 +581,21 @@
                 y2Container.appendChild(checkboxDiv);
             });
 
-            // Fetch and populate date columns
-            try {
-                const response = await fetch('/get_date_columns');
-                const result = await response.json();
-                dateColumns = result.dateColumns;
-
-                dateColumns.forEach(col => {
-                    dateSlicerSelect.add(new Option(col, col));
-                });
-            } catch (error) {
-                console.error('Error fetching date columns:', error);
+            // Restore selections
+            if (currentXValue && xSelect.querySelector(`option[value="${currentXValue}"]`)) {
+                xSelect.value = currentXValue;
             }
+
+            if (currentYValue && ySelect.querySelector(`option[value="${currentYValue}"]`)) {
+                ySelect.value = currentYValue;
+            }
+
+            currentY2Values.forEach(value => {
+                const checkbox = document.querySelector(`.y2-column-checkbox[value="${value}"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                }
+            });
         }
 
         // Handle chart type changes
@@ -765,18 +614,8 @@
             }
         }
 
-        // Initialize date-based slicer with fixed column
+        // Initialize date-based slicer with fixed 'Date' column
         async function initializeDateSlicer() {
-            const selectedColumn = document.getElementById('dateSlicerColumn').value;
-
-            if (!selectedColumn) {
-                return;
-            }
-
-            // Lock the column selection
-            dateSlicerColumn = selectedColumn;
-            document.getElementById('dateSlicerColumn').disabled = true;
-
             const container = document.getElementById('dateSlicerContainer');
             container.innerHTML = '<p style="padding: 20px; text-align: center;">Loading date values...</p>';
 
@@ -784,7 +623,7 @@
                 const response = await fetch('/get_unique_values', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({column: selectedColumn})
+                    body: JSON.stringify({column: dateSlicerColumn})
                 });
 
                 const result = await response.json();
@@ -795,7 +634,7 @@
 
             } catch (error) {
                 console.error('Error initializing date slicer:', error);
-                alert('Error loading date slicer values');
+                container.innerHTML = '<p style="padding: 20px; text-align: center; color: red;">Error: Date column not found</p>';
             }
         }
 
@@ -804,13 +643,23 @@
             const container = document.getElementById('dateSlicerContainer');
             container.innerHTML = '';
 
+            // Add action buttons
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'button-group';
+            buttonGroup.style.marginBottom = '15px';
+            buttonGroup.innerHTML = `
+                <button class="secondary" onclick="selectAllDates()">Select All Dates</button>
+                <button class="secondary" onclick="clearDateSlicer()">Clear All Dates</button>
+            `;
+            container.appendChild(buttonGroup);
+
             const slicerDiv = document.createElement('div');
             slicerDiv.className = 'slicer';
-            slicerDiv.style.maxWidth = '600px';
+            slicerDiv.style.maxWidth = '100%';
 
             const title = document.createElement('div');
             title.className = 'slicer-title';
-            title.textContent = `${dateSlicerColumn} (Fixed Date Column)`;
+            title.textContent = `Filter by ${dateSlicerColumn}`;
             title.style.color = '#003D7A';
             title.style.fontWeight = 'bold';
             slicerDiv.appendChild(title);
@@ -828,6 +677,10 @@
                 checkbox.value = value;
                 checkbox.id = `date-slicer-${value}`;
                 checkbox.className = 'date-slicer-checkbox';
+                checkbox.checked = true;  // Default: all selected
+
+                // Auto-apply filter on change
+                checkbox.addEventListener('change', applyDateSlicerFilter);
 
                 const label = document.createElement('label');
                 label.htmlFor = checkbox.id;
@@ -840,12 +693,22 @@
 
             slicerDiv.appendChild(optionsDiv);
             container.appendChild(slicerDiv);
+
+            // Apply initial filter (all dates selected)
+            applyDateSlicerFilter();
+        }
+
+        // Select all dates
+        function selectAllDates() {
+            document.querySelectorAll('.date-slicer-checkbox').forEach(checkbox => {
+                checkbox.checked = true;
+            });
+            applyDateSlicerFilter();
         }
 
         // Apply date slicer filter
         function applyDateSlicerFilter() {
             if (!gridApi || !dateSlicerColumn) {
-                alert('Please initialize the date slicer first');
                 return;
             }
 
@@ -869,24 +732,12 @@
             gridApi.onFilterChanged();
         }
 
-        // Clear date slicer and reset
+        // Clear date slicer
         function clearDateSlicer() {
             document.querySelectorAll('.date-slicer-checkbox').forEach(checkbox => {
                 checkbox.checked = false;
             });
-
-            if (gridApi && dateSlicerColumn) {
-                const filterInstance = gridApi.getColumnFilterInstance(dateSlicerColumn);
-                filterInstance.setModel(null);
-                gridApi.onFilterChanged();
-            }
-
-            // Reset and unlock column selection
-            dateSlicerColumn = null;
-            dateSlicerValues = [];
-            document.getElementById('dateSlicerColumn').value = '';
-            document.getElementById('dateSlicerColumn').disabled = false;
-            document.getElementById('dateSlicerContainer').innerHTML = '';
+            applyDateSlicerFilter();
         }
 
         // Create chart from filtered data
@@ -1262,18 +1113,13 @@
             });
         }
 
-        // Helper: Generate color palette
+        // Helper: Generate single color for all data points
         function getColors(count, alpha) {
-            const baseColors = [
-                [102, 126, 234], [118, 75, 162], [255, 99, 132],
-                [54, 162, 235], [255, 206, 86], [75, 192, 192],
-                [153, 102, 255], [255, 159, 64], [199, 199, 199],
-                [83, 102, 255], [255, 99, 255], [99, 255, 132]
-            ];
+            // Single color: Blue (#003D7A)
+            const singleColor = [0, 61, 122];
 
-            return Array(count).fill(0).map((_, i) => {
-                const color = baseColors[i % baseColors.length];
-                return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha})`;
+            return Array(count).fill(0).map(() => {
+                return `rgba(${singleColor[0]}, ${singleColor[1]}, ${singleColor[2]}, ${alpha})`;
             });
         }
 
