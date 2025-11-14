@@ -456,6 +456,7 @@
         let dateSlicerColumn = null;
         let dateSlicerValues = [];
         let dateColumns = [];
+        let millionColumns = [];  // Track columns with values >= 1 million
 
         // Initialize AG Grid
         const gridOptions = {
@@ -470,6 +471,49 @@
             rowSelection: 'multiple',
             onFilterChanged: updateChartColumnOptions
         };
+
+        // Auto-detect and format columns with millions
+        function autoMillionFormatter(params) {
+            const value = params.value;
+
+            if (value == null || isNaN(value)) {
+                return value;
+            }
+
+            const numValue = parseFloat(value);
+
+            // Format as millions with dollar sign
+            const millions = (numValue / 1000000).toFixed(2);
+            return `$${millions}M`;
+        }
+
+        // Check if column needs million formatting
+        function needsMillionFormat(columnData) {
+            // Check if any value in the column is >= 1,000,000
+            return columnData.some(row => {
+                const value = parseFloat(row);
+                return !isNaN(value) && Math.abs(value) >= 1000000;
+            });
+        }
+
+        // Format Y-axis values in millions for charts
+        function chartAxisFormatter(value, index, ticks) {
+            if (Math.abs(value) >= 1) {  // Already in millions
+                return '$' + value.toFixed(1) + 'M';
+            }
+            return '$' + value.toLocaleString();
+        }
+
+        // Convert values to millions if column is in million format
+        function convertChartValues(values, columnName) {
+            if (millionColumns.includes(columnName)) {
+                return values.map(v => {
+                    const num = parseFloat(v);
+                    return isNaN(num) ? v : num / 1000000;
+                });
+            }
+            return values;
+        }
 
         // Load data with selected columns
         async function loadData() {
@@ -491,11 +535,28 @@
                 const result = await response.json();
                 currentColumns = result.columns;
 
-                // Create column definitions
-                const columnDefs = result.columns.map(col => ({
-                    field: col,
-                    headerName: col
-                }));
+                // Reset million columns tracking
+                millionColumns = [];
+
+                // Create column definitions with auto-million formatting
+                const columnDefs = result.columns.map(col => {
+                    const colDef = {
+                        field: col,
+                        headerName: col
+                    };
+
+                    // Get all values for this column
+                    const columnValues = result.data.map(row => row[col]);
+
+                    // Check if any value >= 1 million
+                    if (needsMillionFormat(columnValues)) {
+                        colDef.valueFormatter = autoMillionFormatter;
+                        colDef.headerName = col + ' ($M)';
+                        millionColumns.push(col);  // Track this column
+                    }
+
+                    return colDef;
+                });
 
                 // Initialize or update grid
                 const gridDiv = document.querySelector('#myGrid');
@@ -882,11 +943,11 @@
             if (shouldGroup) {
                 const aggregated = aggregateData(filteredData, xColumn, yColumn, aggregation, skipNullZero);
                 xValues = aggregated.x;
-                yValues = aggregated.y;
+                yValues = convertChartValues(aggregated.y, yColumn);  // Convert to millions if needed
             } else {
                 const processed = processData(filteredData, xColumn, yColumn, skipNullZero);
                 xValues = processed.x;
-                yValues = processed.y;
+                yValues = convertChartValues(processed.y, yColumn);  // Convert to millions if needed
             }
 
             // Calculate dynamic width for scrollable chart
@@ -1000,11 +1061,11 @@
             if (shouldGroup) {
                 const aggregated = aggregateData(data, xColumn, y1Column, aggMethod, skipNullZero);
                 xValues = aggregated.x;
-                y1Values = aggregated.y;
+                y1Values = convertChartValues(aggregated.y, y1Column);  // Convert to millions if needed
             } else {
                 const processed = processData(data, xColumn, y1Column, skipNullZero);
                 xValues = processed.x;
-                y1Values = processed.y;
+                y1Values = convertChartValues(processed.y, y1Column);  // Convert to millions if needed
             }
 
             // Process Y2 data (lines)
@@ -1031,10 +1092,10 @@
                 let y2Values;
                 if (shouldGroup) {
                     const aggregated = aggregateData(data, xColumn, y2Col, aggMethod, skipNullZero);
-                    y2Values = aggregated.y;
+                    y2Values = convertChartValues(aggregated.y, y2Col);  // Convert to millions if needed
                 } else {
                     const processed = processData(data, xColumn, y2Col, skipNullZero);
-                    y2Values = processed.y;
+                    y2Values = convertChartValues(processed.y, y2Col);  // Convert to millions if needed
                 }
 
                 datasets.push({
@@ -1088,8 +1149,11 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: y1Column + ' (Bars)'
-                            }
+                                text: millionColumns.includes(y1Column) ? y1Column + ' ($M - Bars)' : y1Column + ' (Bars)'
+                            },
+                            ticks: millionColumns.includes(y1Column) ? {
+                                callback: chartAxisFormatter
+                            } : {}
                         },
                         y2: {
                             type: 'linear',
@@ -1097,7 +1161,17 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Lines'
+                                text: y2Columns.some(col => millionColumns.includes(col)) ? 'Lines ($M)' : 'Lines'
+                            },
+                            ticks: {
+                                callback: function(value, index, ticks) {
+                                    // Check if any Y2 column is in millions
+                                    const anyY2InMillions = y2Columns.some(col => millionColumns.includes(col));
+                                    if (anyY2InMillions) {
+                                        return chartAxisFormatter(value, index, ticks);
+                                    }
+                                    return value;
+                                }
                             },
                             grid: {
                                 drawOnChartArea: false
@@ -1166,10 +1240,22 @@
                     scales: type !== 'pie' && type !== 'doughnut' && type !== 'radar' ? {
                         y: {
                             beginAtZero: true,
-                            title: { display: true, text: isHorizontal ? xColumn : yColumn }
+                            title: {
+                                display: true,
+                                text: isHorizontal ? xColumn : (millionColumns.includes(yColumn) ? yColumn + ' ($M)' : yColumn)
+                            },
+                            ticks: millionColumns.includes(yColumn) && !isHorizontal ? {
+                                callback: chartAxisFormatter
+                            } : {}
                         },
                         x: {
-                            title: { display: true, text: isHorizontal ? yColumn : xColumn }
+                            title: {
+                                display: true,
+                                text: isHorizontal ? (millionColumns.includes(yColumn) ? yColumn + ' ($M)' : yColumn) : xColumn
+                            },
+                            ticks: millionColumns.includes(yColumn) && isHorizontal ? {
+                                callback: chartAxisFormatter
+                            } : {}
                         }
                     } : {}
                 }
