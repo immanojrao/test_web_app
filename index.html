@@ -487,11 +487,16 @@
         // Load data with selected columns
         async function loadData() {
             const checkboxes = document.querySelectorAll('#columnSelector input[type="checkbox"]:checked');
-            const selectedColumns = Array.from(checkboxes).map(cb => cb.value);
+            let selectedColumns = Array.from(checkboxes).map(cb => cb.value);
 
             if (selectedColumns.length === 0) {
                 alert('Please select at least one column');
                 return;
+            }
+
+            // Always include Date column if not already selected
+            if (!selectedColumns.includes('Date')) {
+                selectedColumns.push('Date');
             }
 
             try {
